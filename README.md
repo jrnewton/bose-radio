@@ -121,18 +121,42 @@ firmware revisions removed it). No reboot required on success.
 
 ### Step 2 — Run the on-device installer
 
+Verified against the cloned repo (`scripts/on-device-install/install.sh`,
+2026-06-17). The one-liner downloads the ARMv7 binary + init script, installs
+to **`/mnt/nv/aftertouch`** (persistent partition — *not* rootfs), symlinks
+`/opt/aftertouch`, backs up any prior binary, registers an init script via
+`update-rc.d`, and starts the service. Default version is **v0.107.0**; pin a
+version with `VERSION=x.y.z` or `sh -s -- --version x.y.z`.
+
 ```
 rw && curl -sSL https://raw.githubusercontent.com/gesellix/Bose-SoundTouch/main/scripts/on-device-install/install.sh | sh
 ```
 
+Space check first (binary ~12 MB + one backup; `/mnt/nv` usually has 20–40 MB):
+
+```
+rw && df -h /mnt/nv
+```
+
 ### Step 3 — Verify AfterTouch UI
 
-Browse to `http://192.168.4.30:8000`. If the speaker doesn't expose the port
-externally (older non-BT SoundTouch 10 units may not), use SSH port-forwarding:
+On-device health check:
 
 ```
-ssh -L 8000:localhost:8000 root@192.168.4.30
+wget -qO- http://localhost:8000/health      # expect "version":"v0.107.0"
 ```
+
+The repo's own walkthrough reaches the Admin UI via an SSH tunnel rather than
+assuming the port is exposed externally — plan for that on this older non-BT
+ST 10:
+
+```
+ssh -oHostKeyAlgorithms=+ssh-rsa -L 8000:localhost:8000 root@192.168.4.30
+# then browse http://localhost:8000
+```
+
+Full runbook: `docs/content/docs/guides/ON-DEVICE-INSTALL-WALKTHROUGH.md` in
+the cloned repo.
 
 ## Status / Log
 
@@ -191,7 +215,9 @@ the AfterTouch server must always be running somewhere on the LAN.
 
 - Exact layout of the `remote_services` USB stick (file/folder names,
   filesystem format) for this firmware revision.
-- Whether the on-device AfterTouch port (8000) will be exposed externally on
-  this older (non-BT) SoundTouch 10, or whether we'll need SSH port-forwarding
-  permanently.
-- Free space on the device — README warns the binaries barely fit.
+- **(Answered 2026-06-17)** Port 8000 exposure — the repo's own walkthrough
+  reaches the Admin UI over an SSH tunnel, so we plan for port-forwarding
+  rather than relying on external exposure. See Step 3.
+- **(Answered 2026-06-17)** Free space — the installer targets `/mnt/nv`
+  (~20–40 MB free), not rootfs (~4 MB). Binary is ~12 MB + one backup, and
+  the installer auto-prunes stale artefacts. Fits comfortably. See Step 2.
