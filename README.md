@@ -46,27 +46,71 @@ root login.
 
 **Method A: USB stick (canonical, requires physical access)**
 
-1. Format a USB stick as **FAT32** (or FAT). Some sticks need their MBR
-   "bootable" flag set — see [SoundCork issue #172](https://github.com/deborahgu/soundcork/issues/172).
-2. Create a single empty file named `remote_services` (no extension) in the
-   root of the stick. From Linux:
-   ```
-   touch /mnt/usb/remote_services
-   ```
-3. Insert the stick into the speaker's USB port.
-4. Power-cycle the speaker (unplug, plug back in).
-   - On some SoundTouch 10 units, you may need to hold **`4`** + **`Volume −`**
-     on the speaker while powering on to force the USB check.
-5. After boot, connect:
-   ```
-   ssh -oHostKeyAlgorithms=+ssh-rsa root@192.168.4.30
-   ```
-   No password.
-6. (Optional, recommended) Make SSH persistent so the USB stick is no longer
-   needed:
-   ```
-   touch /mnt/nv/remote_services
-   ```
+We're preparing the stick under **Windows**. The end-state is:
+
+- USB drive formatted as **FAT32**.
+- A single empty file named `remote_services` (no extension, lowercase) at
+  the **root** of the drive.
+
+#### A.1 — Format as FAT32
+
+File Explorer → right-click the drive → **Format…** → File system **FAT32**
+→ Quick Format → Start. If the stick is > 32 GB, Windows hides FAT32; use
+[Rufus](https://rufus.ie/) instead.
+
+#### A.2 — Create the `remote_services` file
+
+Pick the method that won't accidentally append `.txt`:
+
+PowerShell:
+```powershell
+New-Item -Path E:\remote_services -ItemType File
+```
+or cmd:
+```cmd
+type nul > E:\remote_services
+```
+or File Explorer (enable **View → File name extensions** first, then New →
+Text Document, then rename to `remote_services` deleting the `.txt`).
+
+Verify with `dir E:\` — should show `remote_services`, 0 bytes, no extension.
+
+#### A.3 — Eject
+
+Use **Safely Remove Hardware** so the FS is flushed before unplugging.
+
+#### A.4 — Insert and reboot the speaker
+
+1. Speaker powered on.
+2. Plug stick into speaker's USB port.
+3. Unplug speaker power, wait ~5 s, plug back in.
+4. Wait for full boot.
+5. If port 22 doesn't open, retry while holding **`4` + `Volume −`** on the
+   speaker during power-on (forces a USB scan on some ST 10 units).
+
+#### A.5 — Connect
+
+```
+ssh -oHostKeyAlgorithms=+ssh-rsa root@192.168.4.30
+```
+
+No password expected.
+
+#### A.6 — (Optional) Persist SSH so the USB stick isn't needed
+
+Once logged in:
+```
+touch /mnt/nv/remote_services
+```
+
+#### A.7 — Bootable-flag fallback
+
+If A.5 fails to find port 22 and A.4's button-combo retry also fails, the
+stick's MBR partition may need the "active/bootable" flag set (see
+[SoundCork issue #172](https://github.com/deborahgu/soundcork/issues/172)).
+Easiest fix on Windows: re-format with **Rufus** (it sets the flag), or use
+`diskpart` (`select disk N` → `select partition 1` → `active` —
+**triple-check the disk number**).
 
 **Method B: TAP / telnet on port 17000 (legacy, no USB needed)**
 
@@ -107,6 +151,16 @@ ssh -L 8000:localhost:8000 root@192.168.4.30
     notes `remote_services on` was removed from the command set in
     FW 7.x and later (we have FW 27.0.6).
   - No persistent state was changed on the device.
+- **2026-06-17** — Resumed; re-verified state after a host reboot.
+  - The reboot wiped `/tmp`; re-cloned the reference repo to
+    `/tmp/Bose-SoundTouch/`.
+  - Transient scare: this WSL host had come up on the wrong interface
+    (`eth1`, 192.168.1.0/24) with no route to the speaker. After
+    reconnecting WiFi, `eth0` returned to `192.168.4.48/22` and the device
+    was reachable again at the same IP.
+  - Re-confirmed `192.168.4.30` `/info` (deviceID B0D5CC1918A7, FW 27.0.6).
+  - Port re-check: **22 closed**, 8090 open, 17000 open — unchanged from
+    2026-05-10. No device state altered. Next decision: Path A vs Path B.
 
 ## Revised plan options
 
