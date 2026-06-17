@@ -1,0 +1,17 @@
+# Bose SoundTouch 10 preset config — TEMPLATE
+#
+# Copy this to the USB stick as `presets.conf` (the speaker mounts the stick at
+# /media/sda1, so the service reads /media/sda1/presets.conf), edit on any
+# computer, replug, and power-cycle the speaker to apply.
+#
+# Format:  Name | stream-url | optional-image-url
+#   - One station per line; button order = line order (button 1 = first line).
+#   - First two fields (name, stream URL) are required; image URL is optional.
+#   - Stream URL must be http:// or https://.
+#   - Blank lines and lines starting with '#' are ignored.
+#   - At most 6 stations (one per physical preset button).
+#
+# Tip: plain http:// direct streams are the most reliable on this device.
+
+WGBH | http://wgbh-live.streamguys1.com/wgbh
+WOMR | http://womr.streamguys1.com/live | http://art.example/womr.png
