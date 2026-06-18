@@ -34,11 +34,15 @@ func main() {
 		log.Printf("usb config not found within %s; will try cache %s", *mountWait, *cachePath)
 	}
 
-	cfg, source, err := preset.Load(*usbPath, *cachePath)
+	res, err := preset.Load(*usbPath, *cachePath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	log.Printf("loaded %d station(s) from %s", len(cfg.Stations), source)
+	for _, warn := range res.Warnings {
+		log.Printf("warning: %s", warn)
+	}
+	cfg := res.Config
+	log.Printf("loaded %d station(s) from %s", len(cfg.Stations), res.Source)
 
 	srv := preset.NewServer(*baseURL, cfg)
 
@@ -70,25 +74,35 @@ func main() {
 	log.Print("shut down")
 }
 
-// reloadLoop periodically reloads the config so an edited USB stick takes
-// effect without a restart. Only the in-memory config is swapped; if the new
-// config fails to parse, the running config is kept (Load returns an error and
-// we skip the swap).
+// reloadLoop periodically applies config changes from the USB stick without a
+// restart. It is a thin ticker wrapper around reloadOnce, which holds the
+// testable logic.
 func reloadLoop(srv *preset.Server, usbPath, cachePath string, every time.Duration, initialFP string) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	last := initialFP
 	for range t.C {
-		cfg, source, err := preset.Load(usbPath, cachePath)
-		if err != nil {
-			continue
-		}
-		fp := preset.Fingerprint(cfg)
-		if fp == last {
-			continue
-		}
-		last = fp
-		srv.SetConfig(cfg)
-		log.Printf("reloaded %d station(s) from %s", len(cfg.Stations), source)
+		last, _ = reloadOnce(srv, usbPath, cachePath, last)
 	}
+}
+
+// reloadOnce performs a single reload check: it loads the config, logs any
+// warnings, and swaps the served config only when its fingerprint changed. It
+// returns the fingerprint to remember next time and whether a swap happened. On
+// load error (e.g. no usb and no cache) the running config is kept unchanged.
+func reloadOnce(srv *preset.Server, usbPath, cachePath, last string) (string, bool) {
+	res, err := preset.Load(usbPath, cachePath)
+	if err != nil {
+		return last, false
+	}
+	for _, warn := range res.Warnings {
+		log.Printf("reload warning: %s", warn)
+	}
+	fp := preset.Fingerprint(res.Config)
+	if fp == last {
+		return last, false
+	}
+	srv.SetConfig(res.Config)
+	log.Printf("reloaded %d station(s) from %s", len(res.Config.Stations), res.Source)
+	return fp, true
 }

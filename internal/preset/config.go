@@ -11,6 +11,7 @@ package preset
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net/url"
@@ -82,6 +83,12 @@ func ParseConfig(r io.Reader) (*Config, error) {
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
+	if len(cfg.Stations) == 0 {
+		// An empty (or all-comment) file is rejected so it is treated like any
+		// other invalid edit — Load falls back to the cache instead of silently
+		// serving zero presets and blanking the user's buttons.
+		return nil, fmt.Errorf("no stations defined")
+	}
 	return &cfg, nil
 }
 
@@ -108,35 +115,71 @@ const (
 	SourceNone  Source = "none"
 )
 
+// LoadResult is the outcome of Load: the chosen config, where it came from, and
+// any non-fatal warnings the caller should surface (e.g. a present-but-invalid
+// USB file that was ignored in favour of the cache).
+type LoadResult struct {
+	Config   *Config
+	Source   Source
+	Warnings []string
+}
+
 // Load reads the config, preferring the USB stick at usbPath and falling back
 // to the persistent cache at cachePath.
 //
 // When the USB file is present and valid, it is copied to cachePath so the most
 // recent good config survives the stick being removed: the stick is an optional
-// config-injection medium, not a hard runtime dependency. If the USB file is
-// present but invalid, the last known-good cache is used and left untouched.
-func Load(usbPath, cachePath string) (*Config, Source, error) {
-	if data, err := os.ReadFile(usbPath); err == nil {
-		if cfg, perr := ParseConfig(strings.NewReader(string(data))); perr == nil {
-			// Best-effort cache refresh; a write failure must not break startup.
-			_ = os.WriteFile(cachePath, data, 0o644)
-			return cfg, SourceUSB, nil
+// config-injection medium, not a hard runtime dependency. A present-but-invalid
+// or unreadable USB file is ignored in favour of the last known-good cache, with
+// a warning, so a bad edit never wipes a working config.
+func Load(usbPath, cachePath string) (LoadResult, error) {
+	data, err := os.ReadFile(usbPath)
+	switch {
+	case err == nil:
+		cfg, perr := ParseConfig(bytes.NewReader(data))
+		if perr != nil {
+			// USB present but invalid: keep the last known-good cache, warn.
+			res, cerr := loadCache(cachePath)
+			res.Warnings = append(res.Warnings, fmt.Sprintf("usb config %s ignored (invalid): %v", usbPath, perr))
+			return res, cerr
 		}
-		// USB present but invalid: fall back to the last known-good cache.
+		// Only touch flash when the bytes actually changed; the reload loop
+		// calls Load on a timer and must not wear the NAND for an unchanged file.
+		var warns []string
+		if werr := writeCacheIfChanged(cachePath, data); werr != nil {
+			warns = append(warns, fmt.Sprintf("cache update failed: %v", werr))
+		}
+		return LoadResult{Config: cfg, Source: SourceUSB, Warnings: warns}, nil
+	case !os.IsNotExist(err):
+		// USB present but unreadable (e.g. a flaky stick): keep the cache, warn.
+		res, cerr := loadCache(cachePath)
+		res.Warnings = append(res.Warnings, fmt.Sprintf("usb config %s ignored (unreadable): %v", usbPath, err))
+		return res, cerr
+	default:
+		return loadCache(cachePath)
 	}
-	return loadCache(cachePath)
 }
 
-func loadCache(cachePath string) (*Config, Source, error) {
+func loadCache(cachePath string) (LoadResult, error) {
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
-		return nil, SourceNone, fmt.Errorf("no config on usb or cache: %w", err)
+		return LoadResult{Source: SourceNone}, fmt.Errorf("no config on usb or cache: %w", err)
 	}
-	cfg, err := ParseConfig(strings.NewReader(string(data)))
+	cfg, err := ParseConfig(bytes.NewReader(data))
 	if err != nil {
-		return nil, SourceNone, fmt.Errorf("cache config invalid: %w", err)
+		return LoadResult{Source: SourceNone}, fmt.Errorf("cache config invalid: %w", err)
 	}
-	return cfg, SourceCache, nil
+	return LoadResult{Config: cfg, Source: SourceCache}, nil
+}
+
+// writeCacheIfChanged writes data to cachePath only when it differs from the
+// file already there, so the periodic reload loop doesn't wear the NAND flash
+// rewriting an unchanged config every interval.
+func writeCacheIfChanged(cachePath string, data []byte) error {
+	if existing, err := os.ReadFile(cachePath); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	return os.WriteFile(cachePath, data, 0o644)
 }
 
 // WaitForFile polls for path until it exists or timeout elapses, returning true

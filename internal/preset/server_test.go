@@ -142,6 +142,11 @@ func TestHandleStation(t *testing.T) {
 	if !pr.Audio.HasPlaylist || !pr.Audio.IsRealtime {
 		t.Errorf("audio flags = %+v, want both true", pr.Audio)
 	}
+	// The response must carry a streams[] array mirroring streamUrl (the
+	// firmware reads streams[] for the playable list).
+	if len(pr.Audio.Streams) != 1 || pr.Audio.Streams[0].StreamURL != "http://womr.streamguys1.com/live" {
+		t.Errorf("audio.streams = %+v, want one entry mirroring streamUrl", pr.Audio.Streams)
+	}
 }
 
 // TestHandleStationBoseFixture replays the reference repo's exact Orion request

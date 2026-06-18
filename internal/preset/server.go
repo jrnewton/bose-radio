@@ -1,6 +1,7 @@
 package preset
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"hash/fnv"
@@ -27,39 +28,52 @@ const (
 	sourceLocalRadio   = "LOCAL_INTERNET_RADIO"
 )
 
-// Server emulates the two Bose cloud endpoints the preset flow touches. It is
-// safe for concurrent use; SetConfig/SetBaseURL may be called while serving
-// (e.g. after a USB config reload).
+// Server emulates the two Bose cloud endpoints the preset flow touches. The
+// presets body (minus the per-request deviceID) and its ETag are precomputed
+// whenever the config or base URL changes, so request handling stays cheap on
+// the embedded core. It is safe for concurrent use; SetConfig/SetBaseURL may be
+// called while serving (e.g. after a USB config reload).
 type Server struct {
 	mu      sync.RWMutex
 	cfg     *Config
 	baseURL string // absolute base the speaker reaches us at, e.g. http://127.0.0.1:8000
+	items   []byte // precomputed <preset>... elements for cfg+baseURL
+	etag    string // precomputed ETag over items
 }
 
 // NewServer builds a Server. baseURL is the absolute address the speaker uses
 // to reach this service; it is embedded in each preset's location URL.
 func NewServer(baseURL string, cfg *Config) *Server {
-	return &Server{cfg: cfg, baseURL: strings.TrimRight(baseURL, "/")}
+	s := &Server{baseURL: strings.TrimRight(baseURL, "/")}
+	s.SetConfig(cfg)
+	return s
 }
 
-// SetConfig swaps the served config (used by the reload loop).
+// SetConfig swaps the served config and re-renders the cached presets body.
 func (s *Server) SetConfig(cfg *Config) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cfg = cfg
-	s.mu.Unlock()
+	s.rerenderLocked()
 }
 
-// SetBaseURL updates the base URL embedded in preset locations.
+// SetBaseURL updates the base URL embedded in preset locations and re-renders.
 func (s *Server) SetBaseURL(baseURL string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.baseURL = strings.TrimRight(baseURL, "/")
-	s.mu.Unlock()
+	s.rerenderLocked()
 }
 
-func (s *Server) snapshot() (*Config, string) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.cfg, s.baseURL
+func (s *Server) rerenderLocked() {
+	items, err := renderPresetItems(s.cfg, s.baseURL)
+	if err != nil {
+		// encodeStationData only fails if JSON marshaling does, which it won't
+		// for plain strings; degrade to empty rather than panic.
+		items = nil
+	}
+	s.items = items
+	s.etag = makeETag(items)
 }
 
 // Handler returns the HTTP routes for the service.
@@ -78,6 +92,9 @@ func (s *Server) Handler() http.Handler {
 
 // --- presets endpoint ---
 
+// xmlPresets is the response envelope. The handler composes the wrapper by hand
+// (to inject the per-request deviceID cheaply over the precomputed items); this
+// type mirrors that shape for decoding in tests.
 type xmlPresets struct {
 	XMLName  xml.Name    `xml:"presets"`
 	DeviceID string      `xml:"deviceID,attr,omitempty"`
@@ -85,6 +102,7 @@ type xmlPresets struct {
 }
 
 type xmlPreset struct {
+	XMLName     xml.Name       `xml:"preset"`
 	ID          int            `xml:"id,attr"`
 	CreatedOn   int64          `xml:"createdOn,attr"`
 	UpdatedOn   int64          `xml:"updatedOn,attr"`
@@ -99,16 +117,19 @@ type xmlContentItem struct {
 	ItemName     string `xml:"itemName"`
 }
 
-// buildPresetsXML renders the presets resource for the given device. The
-// returned bytes include the XML declaration. deviceID is echoed from the path.
-func (s *Server) buildPresetsXML(deviceID string, cfg *Config, baseURL string) ([]byte, error) {
-	doc := xmlPresets{DeviceID: deviceID}
+// renderPresetItems marshals the <preset> elements for a config, without the
+// surrounding <presets> wrapper (which carries the per-request deviceID).
+func renderPresetItems(cfg *Config, baseURL string) ([]byte, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+	var buf bytes.Buffer
 	for i, st := range cfg.Stations {
 		data, err := encodeStationData(st)
 		if err != nil {
 			return nil, err
 		}
-		doc.Presets = append(doc.Presets, xmlPreset{
+		b, err := xml.Marshal(xmlPreset{
 			ID:        i + 1,
 			CreatedOn: 0,
 			UpdatedOn: 0,
@@ -120,26 +141,23 @@ func (s *Server) buildPresetsXML(deviceID string, cfg *Config, baseURL string) (
 				ItemName:     st.Name,
 			},
 		})
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(b)
 	}
-	body, err := xml.Marshal(doc)
-	if err != nil {
-		return nil, err
-	}
-	return append([]byte(xml.Header), body...), nil
+	return buf.Bytes(), nil
 }
 
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
-	cfg, baseURL := s.snapshot()
+	s.mu.RLock()
+	cfg, items, etag := s.cfg, s.items, s.etag
+	s.mu.RUnlock()
+
 	if cfg == nil {
 		http.Error(w, "no config loaded", http.StatusServiceUnavailable)
 		return
 	}
-	body, err := s.buildPresetsXML(r.PathValue("device"), cfg, baseURL)
-	if err != nil {
-		http.Error(w, "failed to build presets", http.StatusInternalServerError)
-		return
-	}
-	etag := makeETag(body)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Content-Type", contentTypePresets)
 	// The speaker re-polls with its last ETag; answer 304 when unchanged.
@@ -147,7 +165,19 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	_, _ = w.Write(body)
+
+	var buf bytes.Buffer
+	buf.WriteString(xml.Header)
+	buf.WriteString("<presets")
+	if device := r.PathValue("device"); device != "" {
+		buf.WriteString(` deviceID="`)
+		_ = xml.EscapeText(&buf, []byte(device))
+		buf.WriteString(`"`)
+	}
+	buf.WriteString(">")
+	buf.Write(items)
+	buf.WriteString("</presets>")
+	_, _ = w.Write(buf.Bytes())
 }
 
 func makeETag(b []byte) string {
@@ -166,6 +196,13 @@ type playbackResponse struct {
 }
 
 type playbackAudio struct {
+	HasPlaylist bool     `json:"hasPlaylist"`
+	IsRealtime  bool     `json:"isRealtime"`
+	StreamURL   string   `json:"streamUrl"`
+	Streams     []stream `json:"streams"`
+}
+
+type stream struct {
 	HasPlaylist bool   `json:"hasPlaylist"`
 	IsRealtime  bool   `json:"isRealtime"`
 	StreamURL   string `json:"streamUrl"`
@@ -187,11 +224,19 @@ func (s *Server) handleStation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	// Mirror Bose's BMX playback shape: a top-level streamUrl plus a parallel
+	// streams[] array. The reference always populates streams[] (no omitempty),
+	// and the firmware reads it for the playable list, so we include it too.
 	_ = json.NewEncoder(w).Encode(playbackResponse{
 		Audio: playbackAudio{
 			HasPlaylist: true,
 			IsRealtime:  true,
 			StreamURL:   sd.StreamURL,
+			Streams: []stream{{
+				HasPlaylist: true,
+				IsRealtime:  true,
+				StreamURL:   sd.StreamURL,
+			}},
 		},
 		Name:       sd.Name,
 		ImageURL:   sd.ImageURL,

@@ -37,11 +37,13 @@ WGBH | http://wgbh-live.streamguys1.com/wgbh | http://art.example/wgbh.png
 
 func TestParseConfigErrors(t *testing.T) {
 	cases := map[string]string{
-		"missing url": "WCUW",
-		"empty name":  " | http://x.example/s",
-		"bad scheme":  "WCUW | ftp://x.example/s",
-		"no host":     "WCUW | http:///s",
-		"too many":    "a|http://x/1\nb|http://x/2\nc|http://x/3\nd|http://x/4\ne|http://x/5\nf|http://x/6\ng|http://x/7",
+		"missing url":  "WCUW",
+		"empty name":   " | http://x.example/s",
+		"bad scheme":   "WCUW | ftp://x.example/s",
+		"no host":      "WCUW | http:///s",
+		"too many":     "a|http://x/1\nb|http://x/2\nc|http://x/3\nd|http://x/4\ne|http://x/5\nf|http://x/6\ng|http://x/7",
+		"empty input":  "",
+		"all comments": "# just a comment\n\n   \n# another\n",
 	}
 	for name, in := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -79,19 +81,44 @@ func TestLoadUSBValidWritesCache(t *testing.T) {
 	cache := filepath.Join(dir, "cache.conf")
 	writeFile(t, usb, "WCUW | http://x.example/cuw\n")
 
-	cfg, src, err := Load(usb, cache)
+	res, err := Load(usb, cache)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if src != SourceUSB {
-		t.Errorf("source = %q, want usb", src)
+	if res.Source != SourceUSB {
+		t.Errorf("source = %q, want usb", res.Source)
 	}
-	if len(cfg.Stations) != 1 || cfg.Stations[0].Name != "WCUW" {
-		t.Errorf("unexpected config: %+v", cfg.Stations)
+	if len(res.Config.Stations) != 1 || res.Config.Stations[0].Name != "WCUW" {
+		t.Errorf("unexpected config: %+v", res.Config.Stations)
 	}
 	// USB load must refresh the persistent cache.
 	if _, err := os.Stat(cache); err != nil {
 		t.Errorf("cache not written: %v", err)
+	}
+}
+
+func TestLoadCacheWriteSkippedWhenUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	usb := filepath.Join(dir, "usb.conf")
+	cache := filepath.Join(dir, "cache.conf")
+	content := "WCUW | http://x.example/cuw\n"
+	writeFile(t, usb, content)
+	writeFile(t, cache, content) // cache already matches the stick
+
+	// Backdate the cache so a rewrite would bump its mtime.
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(cache, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(usb, cache); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	fi, err := os.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(old) {
+		t.Errorf("cache was rewritten despite unchanged content (mtime moved); flash-wear guard failed")
 	}
 }
 
@@ -102,15 +129,19 @@ func TestLoadUSBInvalidFallsBackToCache(t *testing.T) {
 	writeFile(t, cache, "WGBH | http://x.example/gbh\n")
 	writeFile(t, usb, "this is not valid\n") // single field -> parse error
 
-	cfg, src, err := Load(usb, cache)
+	res, err := Load(usb, cache)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if src != SourceCache {
-		t.Errorf("source = %q, want cache", src)
+	if res.Source != SourceCache {
+		t.Errorf("source = %q, want cache", res.Source)
 	}
-	if cfg.Stations[0].Name != "WGBH" {
-		t.Errorf("expected cached WGBH, got %+v", cfg.Stations)
+	if res.Config.Stations[0].Name != "WGBH" {
+		t.Errorf("expected cached WGBH, got %+v", res.Config.Stations)
+	}
+	// An ignored, invalid USB edit must be surfaced as a warning.
+	if len(res.Warnings) == 0 {
+		t.Error("expected a warning when an invalid USB config is ignored")
 	}
 	// The good cache must be left untouched by an invalid USB file.
 	data, _ := os.ReadFile(cache)
@@ -125,21 +156,21 @@ func TestLoadUSBAbsentUsesCache(t *testing.T) {
 	cache := filepath.Join(dir, "cache.conf")
 	writeFile(t, cache, "WHRB | http://stream.whrb.org/whrb-mp3\n")
 
-	cfg, src, err := Load(usb, cache)
+	res, err := Load(usb, cache)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if src != SourceCache {
-		t.Errorf("source = %q, want cache", src)
+	if res.Source != SourceCache {
+		t.Errorf("source = %q, want cache", res.Source)
 	}
-	if cfg.Stations[0].Name != "WHRB" {
-		t.Errorf("got %+v", cfg.Stations)
+	if res.Config.Stations[0].Name != "WHRB" {
+		t.Errorf("got %+v", res.Config.Stations)
 	}
 }
 
 func TestLoadNothingIsError(t *testing.T) {
 	dir := t.TempDir()
-	_, _, err := Load(filepath.Join(dir, "no-usb"), filepath.Join(dir, "no-cache"))
+	_, err := Load(filepath.Join(dir, "no-usb"), filepath.Join(dir, "no-cache"))
 	if err == nil {
 		t.Fatal("expected error when neither usb nor cache exists")
 	}
