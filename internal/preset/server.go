@@ -18,8 +18,9 @@ const (
 	// its preset list. accountId and deviceId are wildcards we ignore/echo.
 	presetsPathPattern = "GET /streaming/account/{account}/device/{device}/presets"
 	// stationPath is the Orion BMX adapter route a LOCAL_INTERNET_RADIO preset
-	// replays when its button is pressed; we decode its ?data= blob.
-	stationPath = "/core02/svc-bmx-adapter-orion/prod/orion/station"
+	// replays when its button is pressed; we decode its ?data= blob. Derived from
+	// orionBasePath (bmx.go) so the route and the advertised baseUrl stay in sync.
+	stationPath = orionBasePath + "/station"
 	// telemetryPrefix swallows SCMUDC telemetry (preset-press events, volume,
 	// etc.) so a failed POST can't stall playback.
 	telemetryPrefix = "/v1/scmudc/"
@@ -81,6 +82,12 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(presetsPathPattern, s.handlePresets)
 	mux.HandleFunc("GET "+stationPath, s.handleStation)
+	// BMX registry + Orion adapter: makes LOCAL_INTERNET_RADIO a valid source so
+	// the speaker will actually follow a preset's Orion location (see bmx.go).
+	mux.HandleFunc("GET "+bmxRegistryServicesPath, s.handleBMXRegistry)
+	mux.HandleFunc("GET "+bmxRegistryAvailabilityPath, s.handleBMXAvailability)
+	mux.HandleFunc("GET "+orionServicePath, s.handleOrionService)
+	mux.HandleFunc(orionTokenPath, s.handleOrionToken) // any method
 	mux.HandleFunc(telemetryPrefix, s.handleTelemetry) // subtree, any method
 	mux.HandleFunc("/v1/scmudc", s.handleTelemetry)    // exact, any method
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
