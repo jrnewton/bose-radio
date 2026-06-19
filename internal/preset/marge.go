@@ -118,3 +118,24 @@ func (s *Server) handlePowerOn(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBlacklist(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
+
+// The speaker also calls these during boot. They are non-blocking for playback
+// (it streams without them), but we answer them so they don't 404 in the log.
+// Shapes mirror the reference (handlers_marge.go): a bearer token, an empty
+// provider-settings list, and an empty (no-group) document for a standalone
+// speaker.
+
+func (s *Server) handleStreamingToken(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", contentTypePresets)
+	_, _ = io.WriteString(w, xml.Header+`<bearertoken value="Bearer st-preset-server-token"></bearertoken>`)
+}
+
+func (s *Server) handleProviderSettings(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", contentTypePresets)
+	_, _ = io.WriteString(w, xml.Header+`<providerSettings></providerSettings>`)
+}
+
+func (s *Server) handleDeviceGroup(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", contentTypePresets)
+	_, _ = io.WriteString(w, xml.Header+`<group></group>`)
+}

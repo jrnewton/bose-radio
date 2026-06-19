@@ -34,6 +34,8 @@ func main() {
 		serial       = flag.String("serial", "069234P62650386AE", "fallback device serial for /full")
 		productCode  = flag.String("product-code", "SoundTouch 10", "fallback product code/label for /full")
 		deviceName   = flag.String("device-name", "גָדוֹל", "fallback device name for /full")
+
+		logRequests = flag.Bool("log-requests", false, "log every HTTP request to syslog (for debugging the boot/preset flow)")
 	)
 	flag.Parse()
 
@@ -64,6 +66,7 @@ func main() {
 		ProductLabel: *productCode,
 		IPAddress:    "127.0.0.1",
 	}, *infoURL, *lastFullPath)
+	srv.SetLogRequests(*logRequests)
 
 	if *reloadEvery > 0 {
 		go reloadLoop(srv, *usbPath, *cachePath, *reloadEvery, preset.Fingerprint(cfg))

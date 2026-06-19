@@ -105,3 +105,14 @@ func (s *Server) handleOrionToken(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = io.WriteString(w, orionTokenJSON)
 }
+
+// handleMedia serves a tiny placeholder for the BMX icon assets the registry
+// advertises (under {MEDIA_SERVER}/bmx-icons/...). They're cosmetic — the
+// source's glyph in the app UI — so a 1x1 SVG is enough to keep them out of the
+// boot log as 404s.
+const placeholderSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>`
+
+func (s *Server) handleMedia(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	_, _ = io.WriteString(w, placeholderSVG)
+}

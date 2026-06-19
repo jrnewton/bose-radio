@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Bose protocol constants (frozen in FW 27.x).
@@ -55,7 +56,14 @@ type Server struct {
 	fullFP      string
 	fullBody    []byte
 	fullETag    string
+
+	// logReq gates per-request access logging (off by default — see SetLogRequests).
+	logReq atomic.Bool
 }
+
+// SetLogRequests enables/disables per-request access logging. Off by default to
+// keep the device syslog quiet; enable it to trace the boot/preset-press flow.
+func (s *Server) SetLogRequests(on bool) { s.logReq.Store(on) }
 
 // NewServer builds a Server. baseURL is the absolute address the speaker uses
 // to reach this service; it is embedded in each preset's location URL.
@@ -116,13 +124,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /streaming/account/{account}/full", s.handleAccountFull)
 	mux.HandleFunc("POST "+powerOnPath, s.handlePowerOn)
 	mux.HandleFunc("GET "+blacklistPath, s.handleBlacklist)
+	// Non-blocking boot-handshake calls, stubbed so they don't 404 (see marge.go).
+	mux.HandleFunc("GET /streaming/device/{device}/streaming_token", s.handleStreamingToken)
+	mux.HandleFunc("GET /streaming/account/{account}/provider_settings", s.handleProviderSettings)
+	mux.HandleFunc("GET /streaming/account/{account}/device/{device}/group", s.handleDeviceGroup)
+	mux.HandleFunc("GET /streaming/account/{account}/device/{device}/group/", s.handleDeviceGroup)
+	mux.HandleFunc("GET /media/", s.handleMedia)       // placeholder icons (see bmx.go)
 	mux.HandleFunc(telemetryPrefix, s.handleTelemetry) // subtree, any method
 	mux.HandleFunc("/v1/scmudc", s.handleTelemetry)    // exact, any method
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	return logRequests(mux)
+	return s.logRequests(mux)
 }
 
 // statusRecorder captures the response status for access logging.
@@ -136,13 +150,14 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-// logRequests logs one line per request (method, path, status, and whether an
-// Authorization header was present) so the speaker's boot + preset-press request
-// sequence is visible in the device syslog (logread | grep preset-server).
-// Health checks are skipped to keep the log focused on speaker traffic.
-func logRequests(next http.Handler) http.Handler {
+// logRequests, when enabled via SetLogRequests, logs one line per request
+// (method, path, status, and whether an Authorization header was present) to the
+// device syslog (logread | grep preset-server) — invaluable for tracing the boot
+// and preset-press flow. Disabled by default to avoid telemetry chatter; the
+// recorder/log work is skipped entirely when off.
+func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if !s.logReq.Load() || r.URL.Path == "/healthz" {
 			next.ServeHTTP(w, r)
 			return
 		}

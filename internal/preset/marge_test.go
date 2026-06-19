@@ -71,3 +71,33 @@ func TestBlacklist(t *testing.T) {
 		t.Fatalf("blacklist status = %d, want 405 (upstream behavior)", rr.Code)
 	}
 }
+
+func TestBootStubs(t *testing.T) {
+	srv := NewServer("http://127.0.0.1:8000", testConfig())
+	cases := []struct{ path, want string }{
+		{"/streaming/device/B0D5CC1918A7/streaming_token", "bearertoken"},
+		{"/streaming/account/5740317/provider_settings", "providerSettings"},
+		{"/streaming/account/5740317/device/B0D5CC1918A7/group", "<group>"},
+		{"/streaming/account/5740317/device/B0D5CC1918A7/group/", "<group>"},
+	}
+	for _, c := range cases {
+		rr := bmxGet(t, srv, http.MethodGet, c.path)
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s status = %d, want 200", c.path, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), c.want) {
+			t.Errorf("%s body missing %q: %s", c.path, c.want, rr.Body.String())
+		}
+	}
+}
+
+func TestMediaPlaceholder(t *testing.T) {
+	srv := NewServer("http://127.0.0.1:8000", testConfig())
+	rr := bmxGet(t, srv, http.MethodGet, "/media/bmx-icons/orion/monochrome.svg")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("media status = %d, want 200 (not a 404)", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "<svg") {
+		t.Errorf("media body is not an SVG placeholder: %s", rr.Body.String())
+	}
+}
