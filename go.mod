@@ -1,3 +1,3 @@
-module github.com/rocketnewton/bose-presets
+module github.com/jrnewton/bose-radio
 
 go 1.22

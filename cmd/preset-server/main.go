@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rocketnewton/bose-presets/internal/preset"
+	"github.com/jrnewton/bose-radio/internal/preset"
 )
 
 func main() {

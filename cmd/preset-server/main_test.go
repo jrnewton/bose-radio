@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rocketnewton/bose-presets/internal/preset"
+	"github.com/jrnewton/bose-radio/internal/preset"
 )
 
 func write(t *testing.T, path, content string) {
