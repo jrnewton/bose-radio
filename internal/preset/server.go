@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"hash/fnv"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,6 +41,20 @@ type Server struct {
 	baseURL string // absolute base the speaker reaches us at, e.g. http://127.0.0.1:8000
 	items   []byte // precomputed <preset>... elements for cfg+baseURL
 	etag    string // precomputed ETag over items
+
+	// /full device identity (see full.go): defaults + lazy :8090/info fetch.
+	idDefaults   Identity
+	infoURL      string
+	lastFullPath string
+	idOnce       sync.Once
+	idResolved   Identity
+
+	// /full cached body (stable ETag across polls; rebuilt on cfg/account change).
+	fullMu      sync.Mutex
+	fullAccount string
+	fullFP      string
+	fullBody    []byte
+	fullETag    string
 }
 
 // NewServer builds a Server. baseURL is the absolute address the speaker uses
@@ -77,6 +92,13 @@ func (s *Server) rerenderLocked() {
 	s.etag = makeETag(items)
 }
 
+// snapshot returns the current config and base URL under the read lock.
+func (s *Server) snapshot() (*Config, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg, s.baseURL
+}
+
 // Handler returns the HTTP routes for the service.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -88,13 +110,50 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+bmxRegistryAvailabilityPath, s.handleBMXAvailability)
 	mux.HandleFunc("GET "+orionServicePath, s.handleOrionService)
 	mux.HandleFunc(orionTokenPath, s.handleOrionToken) // any method
+	// Minimal marge surface the speaker calls at boot before it will resolve a
+	// LOCAL_INTERNET_RADIO preset (see marge.go).
+	mux.HandleFunc("GET "+sourcesPath, s.handleSourceProviders)
+	mux.HandleFunc("GET /streaming/account/{account}/full", s.handleAccountFull)
+	mux.HandleFunc("POST "+powerOnPath, s.handlePowerOn)
+	mux.HandleFunc("GET "+blacklistPath, s.handleBlacklist)
 	mux.HandleFunc(telemetryPrefix, s.handleTelemetry) // subtree, any method
 	mux.HandleFunc("/v1/scmudc", s.handleTelemetry)    // exact, any method
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	return mux
+	return logRequests(mux)
+}
+
+// statusRecorder captures the response status for access logging.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// logRequests logs one line per request (method, path, status, and whether an
+// Authorization header was present) so the speaker's boot + preset-press request
+// sequence is visible in the device syslog (logread | grep preset-server).
+// Health checks are skipped to keep the log focused on speaker traffic.
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		auth := ""
+		if r.Header.Get("Authorization") != "" {
+			auth = " auth"
+		}
+		log.Printf("%s %s -> %d%s", r.Method, r.URL.Path, rec.status, auth)
+	})
 }
 
 // --- presets endpoint ---

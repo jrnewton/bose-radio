@@ -24,6 +24,16 @@ func main() {
 		cachePath   = flag.String("cache", "/mnt/nv/presets.conf", "persistent cache config path")
 		mountWait   = flag.Duration("mount-wait", 30*time.Second, "how long to wait for the USB mount at startup")
 		reloadEvery = flag.Duration("reload-interval", 15*time.Second, "how often to re-read the config for changes (0 disables)")
+
+		// /full device identity — real values are fetched lazily from infoURL on
+		// the first /full request; these are fallbacks if that fetch fails.
+		infoURL      = flag.String("info-url", "http://localhost:8090/info", "device info URL for lazy identity (empty disables the fetch)")
+		lastFullPath = flag.String("last-full", "/mnt/nv/last-full.xml", "persist the last served /full body here for debugging (empty disables)")
+		deviceID     = flag.String("device-id", "B0D5CC1918A7", "fallback device id for /full")
+		firmware     = flag.String("firmware", "27.0.6.46330.5043500", "fallback firmware version for /full")
+		serial       = flag.String("serial", "069234P62650386AE", "fallback device serial for /full")
+		productCode  = flag.String("product-code", "SoundTouch 10", "fallback product code/label for /full")
+		deviceName   = flag.String("device-name", "גָדוֹל", "fallback device name for /full")
 	)
 	flag.Parse()
 
@@ -45,6 +55,15 @@ func main() {
 	log.Printf("loaded %d station(s) from %s", len(cfg.Stations), res.Source)
 
 	srv := preset.NewServer(*baseURL, cfg)
+	srv.SetIdentity(preset.Identity{
+		DeviceID:     *deviceID,
+		Name:         *deviceName,
+		Serial:       *serial,
+		Firmware:     *firmware,
+		ProductCode:  *productCode,
+		ProductLabel: *productCode,
+		IPAddress:    "127.0.0.1",
+	}, *infoURL, *lastFullPath)
 
 	if *reloadEvery > 0 {
 		go reloadLoop(srv, *usbPath, *cachePath, *reloadEvery, preset.Fingerprint(cfg))
