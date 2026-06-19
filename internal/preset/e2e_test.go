@@ -27,7 +27,7 @@ func TestEndToEnd(t *testing.T) {
 	srv.SetBaseURL(ts.URL)
 
 	// Step 1: speaker fetches presets from the marge endpoint.
-	resp, err := http.Get(ts.URL + "/streaming/account/5740317/device/B0D5CC1918A7/presets")
+	resp, err := http.Get(ts.URL + "/streaming/account/1234567/device/AABBCCDDEEFF/presets")
 	if err != nil {
 		t.Fatalf("GET presets: %v", err)
 	}

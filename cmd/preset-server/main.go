@@ -29,11 +29,11 @@ func main() {
 		// the first /full request; these are fallbacks if that fetch fails.
 		infoURL      = flag.String("info-url", "http://localhost:8090/info", "device info URL for lazy identity (empty disables the fetch)")
 		lastFullPath = flag.String("last-full", "/mnt/nv/last-full.xml", "persist the last served /full body here for debugging (empty disables)")
-		deviceID     = flag.String("device-id", "B0D5CC1918A7", "fallback device id for /full")
+		deviceID     = flag.String("device-id", "AABBCCDDEEFF", "fallback device id for /full")
 		firmware     = flag.String("firmware", "27.0.6.46330.5043500", "fallback firmware version for /full")
-		serial       = flag.String("serial", "069234P62650386AE", "fallback device serial for /full")
+		serial       = flag.String("serial", "EXAMPLESERIAL0000", "fallback device serial for /full")
 		productCode  = flag.String("product-code", "SoundTouch 10", "fallback product code/label for /full")
-		deviceName   = flag.String("device-name", "גָדוֹל", "fallback device name for /full")
+		deviceName   = flag.String("device-name", "ExampleSpeaker", "fallback device name for /full")
 
 		logRequests = flag.Bool("log-requests", false, "log every HTTP request to syslog (for debugging the boot/preset flow)")
 	)

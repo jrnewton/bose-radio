@@ -58,9 +58,33 @@ speaker's `Presets.xml` and rebooting repopulates all 6 from `/full`).
 pushes presets via the `:8090/storePreset` API, is now only a fast recovery tool
 if presets ever get cleared — not part of the normal update path.)
 
+## Enabling SSH (one-time bootstrap)
+
+`deploy.sh` assumes passwordless root SSH is already up. After a factory reset
+(or on a fresh unit) re-enable it once via the USB `remote_services` unlock — the
+firmware enables `sshd` when it finds that file on a stick at boot:
+
+1. **Format a USB stick FAT32.** If it is >32 GB Windows hides FAT32 — use
+   [Rufus](https://rufus.ie/).
+2. **Create an empty file named `remote_services` at the stick's root**, with
+   **no extension** (watch for a hidden `.txt`). PowerShell:
+   `New-Item -Path E:\remote_services -ItemType File`, or cmd:
+   `type nul > E:\remote_services`. Verify with `dir E:\` — 0 bytes, no extension.
+3. **Eject** via *Safely Remove Hardware* so the filesystem flushes.
+4. **Insert into the speaker and power-cycle** (unplug power ~5 s, replug). If
+   port 22 doesn't open, retry holding **`4` + `Volume −`** during power-on
+   (forces a USB scan on some ST 10 units).
+5. **Connect:** `ssh -oHostKeyAlgorithms=+ssh-rsa root@<speaker-ip>` (no password).
+6. **Persist** so the stick isn't needed again: `touch /mnt/nv/remote_services`.
+
+Fallbacks: if port 22 still won't open, the stick's MBR partition may need the
+"active/bootable" flag (reformat with Rufus, which sets it). The legacy
+TAP/telnet `remote_services on` command (port 17000) was removed in FW 7.x+ and
+does **not** work on FW 27.x.
+
 ## On-device deployment
 
-1. **SSH** enabled via the `remote_services` USB unlock, persisted with
+1. **SSH** enabled via the `remote_services` USB unlock (above), persisted with
    `touch /mnt/nv/remote_services`.
 2. **Binary** at `/mnt/nv/preset-server`; **boot persistence** via an
    `/etc/init.d/preset-server` SysV script (`start-stop-daemon --background`,

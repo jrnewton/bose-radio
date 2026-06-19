@@ -66,7 +66,7 @@ func TestPowerOn(t *testing.T) {
 
 func TestBlacklist(t *testing.T) {
 	srv := NewServer("http://127.0.0.1:8000", testConfig())
-	rr := bmxGet(t, srv, http.MethodGet, "/v1/blacklist/B0D5CC1918A7")
+	rr := bmxGet(t, srv, http.MethodGet, "/v1/blacklist/AABBCCDDEEFF")
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("blacklist status = %d, want 405 (upstream behavior)", rr.Code)
 	}
@@ -75,10 +75,10 @@ func TestBlacklist(t *testing.T) {
 func TestBootStubs(t *testing.T) {
 	srv := NewServer("http://127.0.0.1:8000", testConfig())
 	cases := []struct{ path, want string }{
-		{"/streaming/device/B0D5CC1918A7/streaming_token", "bearertoken"},
-		{"/streaming/account/5740317/provider_settings", "providerSettings"},
-		{"/streaming/account/5740317/device/B0D5CC1918A7/group", "<group>"},
-		{"/streaming/account/5740317/device/B0D5CC1918A7/group/", "<group>"},
+		{"/streaming/device/AABBCCDDEEFF/streaming_token", "bearertoken"},
+		{"/streaming/account/1234567/provider_settings", "providerSettings"},
+		{"/streaming/account/1234567/device/AABBCCDDEEFF/group", "<group>"},
+		{"/streaming/account/1234567/device/AABBCCDDEEFF/group/", "<group>"},
 	}
 	for _, c := range cases {
 		rr := bmxGet(t, srv, http.MethodGet, c.path)

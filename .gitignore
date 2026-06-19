@@ -1,1 +1,14 @@
-device-backups/
+# device-backups holds device-state captures. DEFAULT-DENY: ignore everything,
+# then allow only files reviewed and confirmed free of secrets/PII. The
+# BoseApp-Persistence tarball contains a private key, WiFi credentials, an auth
+# token, and personal identity — it must never be committed.
+device-backups/*
+!device-backups/SoundTouchSdkPrivateCfg.xml.orig
+!device-backups/presets-original.xml
+
+# Build output
+preset-server-armv7
+
+# Local operational notes: real device identifiers + passwordless-root SSH
+# access details. Must never be published. Kept local-only.
+SESSION-HANDOFF.md

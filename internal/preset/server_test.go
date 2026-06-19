@@ -20,7 +20,7 @@ func testConfig() *Config {
 
 func TestHandlePresets(t *testing.T) {
 	srv := NewServer("http://svc", testConfig())
-	req := httptest.NewRequest(http.MethodGet, "/streaming/account/5740317/device/B0D5CC1918A7/presets", nil)
+	req := httptest.NewRequest(http.MethodGet, "/streaming/account/1234567/device/AABBCCDDEEFF/presets", nil)
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 
@@ -38,8 +38,8 @@ func TestHandlePresets(t *testing.T) {
 	if err := xml.Unmarshal(rr.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("unmarshal presets: %v\nbody: %s", err, rr.Body.String())
 	}
-	if doc.DeviceID != "B0D5CC1918A7" {
-		t.Errorf("deviceID = %q, want echoed B0D5CC1918A7", doc.DeviceID)
+	if doc.DeviceID != "AABBCCDDEEFF" {
+		t.Errorf("deviceID = %q, want echoed AABBCCDDEEFF", doc.DeviceID)
 	}
 	if len(doc.Presets) != 3 {
 		t.Fatalf("got %d presets, want 3", len(doc.Presets))
@@ -194,7 +194,7 @@ func TestHandleStationBadRequests(t *testing.T) {
 
 func TestHandleTelemetry(t *testing.T) {
 	srv := NewServer("http://svc", testConfig())
-	req := httptest.NewRequest(http.MethodPost, "/v1/scmudc/B0D5CC1918A7", strings.NewReader(`{"event":"preset"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/scmudc/AABBCCDDEEFF", strings.NewReader(`{"event":"preset"}`))
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {

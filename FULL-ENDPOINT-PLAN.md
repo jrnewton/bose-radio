@@ -12,7 +12,7 @@ init-script boot persistence, URL redirects, preset rewrite via
 `:8090/storePreset`).
 
 Request logging traced the exact boot handshake: registry `200`, sourceproviders
-`200`, then **`GET /streaming/account/5740317/full -> 404`**, and it stops — never
+`200`, then **`GET /streaming/account/1234567/full -> 404`**, and it stops — never
 reaching the Orion `/token` → `/station` flow. `now_playing` shows
 `source="LOCAL_INTERNET_RADIO"` / `PLAY_STATE` but **no audio** (no stream
 connection). `/full` is the account document the speaker reconciles its state
@@ -117,7 +117,7 @@ known values (provisioned from a one-time `:8090/info` read so they're
 known-correct). **No `-account-id`** — echo the path.
 
 **4. Tests — `internal/preset/full_test.go`**
-- `GET /streaming/account/5740317/full` → 200, xml content-type, valid XML;
+- `GET /streaming/account/1234567/full` → 200, xml content-type, valid XML;
   `<account id>` echoes the path; `accountStatus=OK`; exactly one account-level
   `<source>` with `sourceproviderid=11`/`name=LOCAL_INTERNET_RADIO`; 6 `<preset>`
   each with a nested well-formed source.

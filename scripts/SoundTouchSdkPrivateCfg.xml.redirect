@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SoundTouchSdkPrivateCfg>
+  <margeServerUrl>http://127.0.0.1:8000</margeServerUrl>
+  <statsServerUrl>http://127.0.0.1:8000</statsServerUrl>
+  <swUpdateUrl>https://worldwide.bose.com/updates/soundtouch</swUpdateUrl>
+  <usePandoraProductionServer>true</usePandoraProductionServer>
+  <isZeroconfEnabled>true</isZeroconfEnabled>
+  <saveMargeCustomerReport>false</saveMargeCustomerReport>
+  <bmxRegistryUrl>http://127.0.0.1:8000/bmx/registry/v1/services</bmxRegistryUrl>
+</SoundTouchSdkPrivateCfg>

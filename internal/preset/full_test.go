@@ -13,9 +13,9 @@ func fullTestServer() *Server {
 	// infoURL "" disables the lazy :8090/info fetch; lastFullPath "" disables the
 	// on-device body dump — so tests use these deterministic identity values.
 	srv.SetIdentity(Identity{
-		DeviceID:     "B0D5CC1918A7",
+		DeviceID:     "AABBCCDDEEFF",
 		Name:         "TestSpeaker",
-		Serial:       "069234P62650386AE",
+		Serial:       "EXAMPLESERIAL0000",
 		Firmware:     "27.0.6.46330.5043500",
 		ProductCode:  "SoundTouch 10",
 		ProductLabel: "SoundTouch 10",
@@ -26,7 +26,7 @@ func fullTestServer() *Server {
 
 func TestAccountFullStructure(t *testing.T) {
 	srv := fullTestServer()
-	rr := bmxGet(t, srv, http.MethodGet, "/streaming/account/5740317/full")
+	rr := bmxGet(t, srv, http.MethodGet, "/streaming/account/1234567/full")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -39,8 +39,8 @@ func TestAccountFullStructure(t *testing.T) {
 	if err := xml.Unmarshal(rr.Body.Bytes(), &acc); err != nil {
 		t.Fatalf("/full is not valid XML: %v\n%s", err, rr.Body.String())
 	}
-	if acc.ID != "5740317" {
-		t.Errorf("account id = %q, want echoed 5740317", acc.ID)
+	if acc.ID != "1234567" {
+		t.Errorf("account id = %q, want echoed 1234567", acc.ID)
 	}
 	if acc.AccountStatus != "OK" || acc.Mode != "global" || acc.PreferredLanguage != "en" {
 		t.Errorf("envelope = status:%q mode:%q lang:%q", acc.AccountStatus, acc.Mode, acc.PreferredLanguage)
@@ -49,7 +49,7 @@ func TestAccountFullStructure(t *testing.T) {
 		t.Fatalf("got %d devices, want 1", len(acc.Devices))
 	}
 	dev := acc.Devices[0]
-	if dev.DeviceID != "B0D5CC1918A7" {
+	if dev.DeviceID != "AABBCCDDEEFF" {
 		t.Errorf("deviceid = %q", dev.DeviceID)
 	}
 	// One preset per configured station, each a well-formed LOCAL_INTERNET_RADIO.
@@ -76,13 +76,13 @@ func TestAccountFullStructure(t *testing.T) {
 // this guards against a refactor silently dropping one.
 func TestAccountFullRequiredElements(t *testing.T) {
 	srv := fullTestServer()
-	body := bmxGet(t, srv, http.MethodGet, "/streaming/account/5740317/full").Body.String()
+	body := bmxGet(t, srv, http.MethodGet, "/streaming/account/1234567/full").Body.String()
 
 	required := []string{
 		`<accountStatus>OK</accountStatus>`,
 		`<mode>global</mode>`,
 		`<preferredLanguage>en</preferredLanguage>`,
-		`deviceid="B0D5CC1918A7"`,
+		`deviceid="AABBCCDDEEFF"`,
 		`<attachedProduct product_code="SoundTouch 10">`,
 		`<components></components>`,
 		`<productlabel>`,
@@ -106,7 +106,7 @@ func TestAccountFullRequiredElements(t *testing.T) {
 
 func TestAccountFullConditional(t *testing.T) {
 	srv := fullTestServer()
-	path := "/streaming/account/5740317/full"
+	path := "/streaming/account/1234567/full"
 
 	rr1 := bmxGet(t, srv, http.MethodGet, path)
 	etag := rr1.Header().Get("ETag")
